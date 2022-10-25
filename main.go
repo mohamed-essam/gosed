@@ -1,4 +1,4 @@
-// Copyright GoSed (c) 2021, Carter Peel 
+// Copyright GoSed (c) 2021, Carter Peel
 // This code is licensed under MIT license (see LICENSE for details)
 
 package gosed
@@ -7,11 +7,13 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/carterpeel/go-corelib/ios"
-	"github.com/zenthangplus/goccm"
 	"io"
 	"os"
+	"path"
 	"time"
+
+	"github.com/carterpeel/go-corelib/ios"
+	"github.com/zenthangplus/goccm"
 )
 
 // Replacer contains all of the methods needed to properly execute replace operations
@@ -44,17 +46,11 @@ type replacerSemaphore struct {
 // NewReplacer returns a new *Replacer type
 func NewReplacer(fileName string) (*Replacer, error) {
 	fd, err := os.Stat(fileName)
-	switch err {
-	case nil:
-		break
-	default:
+	if err != nil {
 		return nil, err
 	}
 	fi, err := os.OpenFile(fileName, os.O_RDWR, fd.Mode().Perm())
-	switch err {
-	case nil:
-		break
-	default:
+	if err != nil {
 		return nil, err
 	}
 	return &Replacer{
@@ -99,24 +95,15 @@ func (rp *Replacer) NewStringMapping(oldString, newString string) error {
 
 func (rp *Replacer) Reset() error {
 	var err error
-	switch err := rp.Config.File.Close(); err {
-	case nil:
-		break
-	default:
+	if err := rp.Config.File.Close(); err != nil {
 		return err
 	}
 	fd, err := os.Stat(rp.Config.FilePath)
-	switch err {
-	case nil:
-		break
-	default:
+	if err != nil {
 		return err
 	}
 	rp.Config.File, err = os.OpenFile(rp.Config.FilePath, os.O_RDWR, fd.Mode().Perm())
-	switch err {
-	case nil:
-		break
-	default:
+	if err != nil {
 		return err
 	}
 	rp.Config.Mappings.Keys = rp.Config.Mappings.Keys[:0]
@@ -143,19 +130,13 @@ func DoSequentialReplace(rp *Replacer) (int, error) {
 	buf := bytes.NewBuffer(make([]byte, 8192))
 	replacer := ios.BytesReplacingReader{}
 	DoSingleReplace := func(old, new []byte) (int, error) {
-		tmpFile := fmt.Sprintf("tmp-gosed-%d", time.Now().UnixNano())
+		tmpFile := path.Join(path.Dir(rp.Config.FilePath), fmt.Sprintf("tmp-gosed-%d", time.Now().UnixNano()))
 		input, err := os.OpenFile(rp.Config.FilePath, os.O_RDWR, rp.Config.FilePerm)
-		switch err {
-		case nil:
-			break
-		default:
+		if err != nil {
 			return 0, err
 		}
 		output, err := os.OpenFile(tmpFile, os.O_RDWR|os.O_CREATE, rp.Config.FilePerm)
-		switch err {
-		case nil:
-			break
-		default:
+		if err != nil {
 			return 0, err
 		}
 		defer func(input, output *os.File) {
@@ -164,22 +145,10 @@ func DoSequentialReplace(rp *Replacer) (int, error) {
 		}(input, output)
 		replacer.Reset(bufio.NewReaderSize(input, 8192), old, new)
 		wrote, err := io.CopyBuffer(output, &replacer, buf.Bytes())
-		switch err {
-		case nil:
-			break
-		default:
+		if err != nil {
 			return 0, err
 		}
-		switch err := os.Remove(rp.Config.FilePath); err {
-		case nil:
-			break
-		default:
-			return 0, err
-		}
-		switch err := os.Rename(tmpFile, rp.Config.FilePath); err {
-		case nil:
-			break
-		default:
+		if err := os.Rename(tmpFile, rp.Config.FilePath); err != nil {
 			return 0, err
 		}
 		rp.Config.FileSize = wrote
@@ -188,10 +157,7 @@ func DoSequentialReplace(rp *Replacer) (int, error) {
 	var count int
 	for index, key := range rp.Config.Mappings.Keys {
 		wrote, err := DoSingleReplace(key, rp.Config.Mappings.Indices[index])
-		switch err {
-		case nil:
-			break
-		default:
+		if err != nil {
 			return count, err
 		}
 		count += wrote
@@ -207,17 +173,11 @@ func DoSequentialReplace(rp *Replacer) (int, error) {
 func DoChainReplace(rp *Replacer) (int, error) {
 	tmpfile := fmt.Sprintf("tmp-gosed-%d", time.Now().UnixNano())
 	input, err := os.OpenFile(rp.Config.FilePath, os.O_RDWR, rp.Config.FilePerm)
-	switch err {
-	case nil:
-		break
-	default:
+	if err != nil {
 		return 0, err
 	}
 	output, err := os.OpenFile(tmpfile, os.O_RDWR|os.O_CREATE, rp.Config.FilePerm)
-	switch err {
-	case nil:
-		break
-	default:
+	if err != nil {
 		return 0, err
 	}
 	defer func(input, output *os.File) {
@@ -234,22 +194,13 @@ func DoChainReplace(rp *Replacer) (int, error) {
 		replacer = ios.NewBytesReplacingReader(replacer, key, rp.Config.Mappings.Indices[index])
 	}
 	wrote, err := io.CopyBuffer(output, replacer, make([]byte, 8192))
-	switch err {
-	case nil:
-		break
-	default:
+	if err != nil {
 		return 0, err
 	}
-	switch err := os.Remove(rp.Config.FilePath); err {
-	case nil:
-		break
-	default:
+	if err := os.Remove(rp.Config.FilePath); err != nil {
 		return 0, err
 	}
-	switch err := os.Rename(tmpfile, rp.Config.FilePath); err {
-	case nil:
-		break
-	default:
+	if err := os.Rename(tmpfile, rp.Config.FilePath); err != nil {
 		return 0, err
 	}
 	rp.Config.FileSize = wrote
@@ -257,4 +208,3 @@ func DoChainReplace(rp *Replacer) (int, error) {
 	rp.Config.Mappings.Keys = rp.Config.Mappings.Keys[:0]
 	return int(wrote), nil
 }
-

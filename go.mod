@@ -1,4 +1,4 @@
-module github.com/carterpeel/gosed
+module github.com/mohamed-essam/gosed
 
 go 1.18
 
