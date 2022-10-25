@@ -11,9 +11,6 @@ import (
 	"os"
 	"path"
 	"time"
-
-	"github.com/carterpeel/go-corelib/ios"
-	"github.com/zenthangplus/goccm"
 )
 
 // Replacer contains all of the methods needed to properly execute replace operations
@@ -29,18 +26,12 @@ type replacerConfig struct {
 	FilePerm     os.FileMode
 	Asynchronous bool
 	Mappings     *replacerMappings
-	Semaphore    *replacerSemaphore
 }
 
 // replacerStringMappings maps old byte sequences to new byte sequences
 type replacerMappings struct {
 	Keys    [][]byte
 	Indices [][]byte
-}
-
-// replacerSemaphore contains all of the channels and waitgroups needed for async
-type replacerSemaphore struct {
-	GCM goccm.ConcurrencyManager
 }
 
 // NewReplacer returns a new *Replacer type
@@ -62,10 +53,6 @@ func NewReplacer(fileName string) (*Replacer, error) {
 			Mappings: &replacerMappings{
 				Keys:    make([][]byte, 0),
 				Indices: make([][]byte, 0),
-			},
-			Asynchronous: false,
-			Semaphore: &replacerSemaphore{
-				GCM: goccm.New(1),
 			},
 		},
 	}, nil
@@ -114,21 +101,18 @@ func (rp *Replacer) Reset() error {
 
 // ReplaceChained does the replace operation with a chained reader model
 func (rp *Replacer) ReplaceChained() (int, error) {
-	rp.Config.Semaphore.GCM.Wait()
 	return DoChainReplace(rp)
 }
 
 // Replace does the replace operation with a concurrent (sequential) reader --> tmpfile model
 func (rp *Replacer) Replace() (int, error) {
-	rp.Config.Semaphore.GCM.Wait()
 	return DoSequentialReplace(rp)
 }
 
 // DoSequentialReplace does the replace operation without reader chaining, which is slower but less resource intensive.
 func DoSequentialReplace(rp *Replacer) (int, error) {
-	defer rp.Config.Semaphore.GCM.Done()
 	buf := bytes.NewBuffer(make([]byte, 8192))
-	replacer := ios.BytesReplacingReader{}
+	replacer := BytesReplacingReader{}
 	DoSingleReplace := func(old, new []byte) (int, error) {
 		tmpFile := path.Join(path.Dir(rp.Config.FilePath), fmt.Sprintf("tmp-gosed-%d", time.Now().UnixNano()))
 		input, err := os.OpenFile(rp.Config.FilePath, os.O_RDWR, rp.Config.FilePerm)
@@ -183,15 +167,14 @@ func DoChainReplace(rp *Replacer) (int, error) {
 	defer func(input, output *os.File) {
 		_ = input.Close()
 		_ = input.Close()
-		rp.Config.Semaphore.GCM.Done()
 	}(input, output)
-	var replacer = ios.NewBytesReplacingReader(bufio.NewReaderSize(input, 8192), rp.Config.Mappings.Keys[0], rp.Config.Mappings.Indices[0])
+	var replacer = NewBytesReplacingReader(bufio.NewReaderSize(input, 8192), rp.Config.Mappings.Keys[0], rp.Config.Mappings.Indices[0])
 	//replacer.SetBufferSize(8192*4)
 	for index, key := range rp.Config.Mappings.Keys {
 		if index == 0 {
 			continue
 		}
-		replacer = ios.NewBytesReplacingReader(replacer, key, rp.Config.Mappings.Indices[index])
+		replacer = NewBytesReplacingReader(replacer, key, rp.Config.Mappings.Indices[index])
 	}
 	wrote, err := io.CopyBuffer(output, replacer, make([]byte, 8192))
 	if err != nil {
